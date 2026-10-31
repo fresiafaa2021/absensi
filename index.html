@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Absensi Karyawan</title>
+
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f6f9;
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1100px;
+    margin: auto;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px #0001;
+}
+
+h1 {
+    text-align: center;
+}
+
+input, button, select {
+    padding: 10px;
+    margin: 5px 0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+button {
+    background: #1769aa;
+    color: white;
+    cursor: pointer;
+    border: none;
+}
+
+button:hover {
+    opacity: 0.85;
+}
+
+.delete-btn {
+    background: #d32f2f;
+}
+
+.download-btn {
+    background: #168447;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    margin-top: 15px;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 700px;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+}
+
+th {
+    background: #1769aa;
+    color: white;
+}
+
+td.nama {
+    text-align: left;
+    font-weight: bold;
+}
+
+.status {
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.H { background: #c8e6c9; color: #1b5e20; }
+.I { background: #fff3cd; color: #856404; }
+.S { background: #bbdefb; color: #0d47a1; }
+.A { background: #ffcdd2; color: #b71c1c; }
+.L { background: #e1bee7; color: #4a148c; }
+
+.summary {
+    margin-top: 20px;
+    padding: 15px;
+    background: #eef3f8;
+    border-radius: 8px;
+}
+
+.summary p {
+    margin: 7px 0;
+}
+
+@media (max-width: 600px) {
+    body {
+        padding: 8px;
+    }
+
+    .container {
+        padding: 12px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>ABSENSI KARYAWAN</h1>
+
+<h3>Tambah Karyawan</h3>
+<input type="text" id="namaKaryawan" placeholder="Nama karyawan">
+<button onclick="tambahKaryawan()">Tambah</button>
+
+<hr>
+
+<h3>Data Absensi</h3>
+
+<label>Pilih Bulan:</label>
+<input type="month" id="bulan">
+
+<div class="table-wrapper">
+<table id="tabelAbsensi">
+<thead id="kepalaTabel"></thead>
+<tbody id="isiTabel"></tbody>
+</table>
+</div>
+
+<div class="summary" id="ringkasan"></div>
+
+<button class="download-btn" onclick="downloadExcel()">
+Download Laporan Excel
+</button>
+
+</div>
+
+<script>
+let karyawan = JSON.parse(localStorage.getItem("karyawan")) || [];
+let absensi = JSON.parse(localStorage.getItem("absensi")) || {};
+
+const bulanInput = document.getElementById("bulan");
+
+function bulanSekarang() {
+    const sekarang = new Date();
+    return sekarang.getFullYear() + "-" +
+        String(sekarang.getMonth() + 1).padStart(2, "0");
+}
+
+bulanInput.value = bulanSekarang();
+
+function simpanData() {
+    localStorage.setItem("karyawan", JSON.stringify(karyawan));
+    localStorage.setItem("absensi", JSON.stringify(absensi));
+}
+
+function jumlahHari(bulan) {
+    const [tahun, bulanAngka] = bulan.split("-").map(Number);
+    return new Date(tahun, bulanAngka, 0).getDate();
+}
+
+function kunci(nama, tanggal) {
+    return bulanInput.value + "_" + nama + "_" + tanggal;
+}
+
+function tambahKaryawan() {
+    const input = document.getElementById("namaKaryawan");
+    const nama = input.value.trim();
+
+    if (!nama) {
+        alert("Masukkan nama karyawan terlebih dahulu.");
+        return;
+    }
+
+    if (karyawan.includes(nama)) {
+        alert("Nama karyawan sudah ada.");
+        return;
+    }
+
+    karyawan.push(nama);
+    input.value = "";
+
+    simpanData();
+    tampilkanAbsensi();
+}
+
+function hapusKaryawan(nama) {
+    if (!confirm("Hapus " + nama + " beserta seluruh riwayat absensinya?")) {
+        return;
+    }
+
+    karyawan = karyawan.filter(n => n !== nama);
+
+    Object.keys(absensi).forEach(key => {
+        if (key.includes("_" + nama + "_")) {
+            delete absensi[key];
+        }
+    });
+
+    simpanData();
+    tampilkanAbsensi();
+}
+
+function ubahStatus(nama, tanggal) {
+    const key = kunci(nama, tanggal);
+    const status = ["", "H", "I", "S", "A", "L"];
+
+    let sekarang = absensi[key] || "";
+    let index = status.indexOf(sekarang);
+
+    absensi[key] = status[(index + 1) % status.length];
+
+    simpanData();
+    tampilkanAbsensi();
+}
+
+function tampilkanAbsensi() {
+    const bulan = bulanInput.value;
+
+    if (!bulan) return;
+
+    const totalHari = jumlahHari(bulan);
+
+    let kepala = "<tr><th>Nama Karyawan</th>";
+
+    for (let i = 1; i <= totalHari; i++) {
+        kepala += "<th>" + i + "</th>";
+    }
+
+    kepala += "<th>Hadir</th><th>Izin</th><th>Sakit</th><th>Alpha</th><th>Libur</th><th>Aksi</th></tr>";
+
+    document.getElementById("kepalaTabel").innerHTML = kepala;
+
+    let isi = "";
+
+    let total = {
+        H: 0,
+        I: 0,
+        S: 0,
+        A: 0,
+        L: 0
+    };
+
+    karyawan.forEach(nama => {
+        let hitung = {
+            H: 0,
+            I: 0,
+            S: 0,
+            A: 0,
+            L: 0
+        };
+
+        isi += "<tr>";
+        isi += '<td class="nama">' + escapeHTML(nama) + "</td>";
+
+        for (let tanggal = 1; tanggal <= totalHari; tanggal++) {
+            const status = absensi[kunci(nama, tanggal)] || "";
+
+            if (hitung[status] !== undefined) {
+                hitung[status]++;
+                total[status]++;
+            }
+
+            isi += `<td class="status ${status}"
+                onclick="ubahStatus('${escapeJS(nama)}', ${tanggal})">
+                ${status}
+            </td>`;
+        }
+
+        isi += "<td>" + hitung.H + "</td>";
+        isi += "<td>" + hitung.I + "</td>";
+        isi += "<td>" + hitung.S + "</td>";
+        isi += "<td>" + hitung.A + "</td>";
+        isi += "<td>" + hitung.L + "</td>";
+
+        isi += `<td><button class="delete-btn"
+            onclick="hapusKaryawan('${escapeJS(nama)}')">Hapus</button></td>`;
+
+        isi += "</tr>";
+    });
+
+    document.getElementById("isiTabel").innerHTML = isi;
+
+    document.getElementById("ringkasan").innerHTML = `
+        <h3>Ringkasan Absensi</h3>
+        <p>Jumlah Karyawan: ${karyawan.length}</p>
+        <p>Hadir: ${total.H}</p>
+        <p>Izin: ${total.I}</p>
+        <p>Sakit: ${total.S}</p>
+        <p>Alpha: ${total.A}</p>
+        <p>Libur: ${total.L}</p>
+    `;
+}
+
+function escapeHTML(teks) {
+    return String(teks).replace(/[&<>"']/g, karakter => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[karakter]);
+}
+
+function escapeJS(teks) {
+    return String(teks)
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "\\r");
+}
+
+async function downloadExcel() {
+    if (typeof ExcelJS === "undefined") {
+        alert("Gagal memuat ExcelJS. Periksa koneksi internet lalu coba lagi.");
+        return;
+    }
+
+    const bulan = bulanInput.value;
+
+    if (!bulan) {
+        alert("Pilih bulan terlebih dahulu.");
+        return;
+    }
+
+    const totalHari = jumlahHari(bulan);
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Laporan Absensi");
+
+    worksheet.mergeCells(1, 1, 1, totalHari + 7);
+
+    const judul = worksheet.getCell("A1");
+    judul.value = "LAPORAN ABSENSI KARYAWAN - " + bulan;
+    judul.font = { bold: true, size: 16 };
+    judul.alignment = { horizontal: "center" };
+
+    const header = ["Nama Karyawan"];
+
+    for (let i = 1; i <= totalHari; i++) {
+        header.push(i);
+    }
+
+    header.push("Hadir", "Izin", "Sakit", "Alpha", "Libur");
+
+    const barisHeader = worksheet.addRow(header);
+
+    barisHeader.eachCell(cell => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FF1769AA" }
+        };
+        cell.alignment = { horizontal: "center" };
+        cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" }
+        };
+    });
+
+    const warnaStatus = {
+        H: "FFC8E6C9",
+        I: "FFFFF3CD",
+        S: "FFBBDEFB",
+        A: "FFFFCDD2",
+        L: "FFE1BEE7"
+    };
+
+    karyawan.forEach(nama => {
+        const baris = [nama];
+
+        let hitung = {
+            H: 0,
+            I: 0,
+            S: 0,
+            A: 0,
+            L: 0
+        };
+
+        for (let tanggal = 1; tanggal <= totalHari; tanggal++) {
+            const status = absensi[bulan + "_" + nama + "_" + tanggal] || "";
+
+            baris.push(status);
+
+            if (hitung[status] !== undefined) {
+                hitung[status]++;
+            }
+        }
+
+        baris.push(
+            hitung.H,
+            hitung.I,
+            hitung.S,
+            hitung.A,
+            hitung.L
+        );
+
+        const row = worksheet.addRow(baris);
+
+        row.eachCell((cell, colNumber) => {
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+            cell.border = {
+                top: { style: "thin" },
+                left: { style: "thin" },
+                bottom: { style: "thin" },
+                right: { style: "thin" }
+            };
+
+            if (colNumber === 1) {
+                cell.alignment = { horizontal: "left" };
+            }
+
+            if (colNumber >= 2 && colNumber <= totalHari + 1) {
+                const status = cell.value;
+
+                if (warnaStatus[status]) {
+                    cell.fill = {
+                        type: "pattern",
+                        pattern: "solid",
+                        fgColor: { argb: warnaStatus[status] }
+                    };
+                    cell.font = { bold: true };
+                }
+            }
+        });
+    });
+
+    worksheet.columns.forEach((column, index) => {
+        column.width = index === 0 ? 25 : 12;
+    });
+
+    worksheet.views = [
+        { state: "frozen", xSplit: 1, ySplit: 2 }
+    ];
+
+    worksheet.autoFilter = {
+        from: { row: 2, column: 1 },
+        to: { row: 2, column: totalHari + 6 }
+    };
+
+    worksheet.pageSetup.orientation = "landscape";
+    worksheet.pageSetup.fitToPage = true;
+    worksheet.pageSetup.fitToWidth = 1;
+    worksheet.pageSetup.fitToHeight = 0;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    const blob = new Blob(
+        [buffer],
+        {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "Laporan_Absensi_" + bulan + ".xlsx";
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+}
+
+bulanInput.addEventListener("change", tampilkanAbsensi);
+
+tampilkanAbsensi();
+</script>
+
+</body>
+  </html>
